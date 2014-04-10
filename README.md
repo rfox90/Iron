@@ -1,7 +1,9 @@
 Iron
 ====
 
-An Iron to Solder with. Technic Pack Solder file manager written in perl.
+An Iron to Solder with. Technic Pack Solder file manager written in perl. 
+
+Turns a large collection of .jars and .zips into solder compatible mod listings whilst also optionally keeping the solder database up to date.
 
 A Work in progress!
 
