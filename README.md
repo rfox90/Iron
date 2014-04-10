@@ -5,6 +5,8 @@ An Iron to Solder with. Technic Pack Solder file manager written in perl.
 
 A Work in progress!
 
+Tested with a modpack that has over 50 mods.
+
 Dependancies
 ====
 * DBI - For Database access
@@ -16,10 +18,10 @@ Dependancies
 
 Usage
 ====
-Install Dependancies
-Copy config.yml.sample to config.yml
-plop your mod files from your non-technic minecraft test instance into the input path
-Run
+1. Install Dependancies
+2. Copy config.yml.sample to config.yml
+3. plop your mod files from your non-technic minecraft test instance into the input path
+4. Run
 
 Issues
 ====
