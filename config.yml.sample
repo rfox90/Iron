@@ -1,12 +1,12 @@
-database: 
-  database: <database>
-  hostname: '127.0.0.1'
-  password: <pass>
-  port: '3306'
-  username: <user>
-locations: 
-  input: /home/ahref/input/
-  output: /var/www/api/public/mods/
-options: 
-  force_generate: false
-  update_database: true
+database:
+	hostname: 127.0.0.1
+	username: solder
+	password: ***
+	database: solder
+	port: '3306'
+locations:
+	input: /var/www/api/public/input/
+	output: /var/www/api/public/mods/
+options:
+	update-database: 1
+	force-generate: 0

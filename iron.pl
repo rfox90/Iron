@@ -68,12 +68,15 @@ sub examineMods {
 		next if($file=~ m/\.+$/);
 		my $search = lc($file);
 		$search =~ s/\-universal//;
-
+		print $file . "\n";
+		
 		#TODO: Regex not my forte
 		my ($name,$version) = $search =~ m/([\D]*)((_|-| |v|rv|[\d]{1}).*)\.(jar|zip)/;
+		print "$name|$version\n";
 		if($name && $version) {
 			$matched++;
 			($name,$version) = cleanMod($name,$version);
+			print "$name|$version\n";
 		} else {
 			#TODO: Regex not my forte
 			my $mcversion;
@@ -81,7 +84,7 @@ sub examineMods {
 			($mcversion,$pork,$name,$version) = $search =~ m/(1\.6\.[\d]{1}( |_))([\D]*)((_|-| |v|rv|[\d]{1}).*)\.(jar|zip)/;
 			if($name && $version) {
 				($name,$version) = cleanMod($name,$version);	
-				#print "$mcversion\n$name\n $version\n $pork";
+				print "$mcversion\n$name\n $version\n $pork";
 				$matched++;
 			} else {
 				print "$file\n";
@@ -96,7 +99,7 @@ sub examineMods {
 		push(@mods, $mod);
 		$total ++;
 	}
-	print "$parsed/total files\n";
+	print "parsed/total files\n";
 	print "$matched/$total\n";
 }
 
@@ -137,7 +140,7 @@ sub compareMods {
 
 sub checkDBForMod {
 	my($mod) = @_;
-	print "Checking DB for $mod\n";
+#	print "Checking DB for $mod\n";
 	my $sql = "select name from mods where name=?";
 	my $firstPass = $dbh->prepare($sql);
 
@@ -231,7 +234,7 @@ sub getModID {
 sub prepare {
 	my $total = 0;
 	my $matched = 0;
-	MOD: foreach (@mods) {
+	MOD: foreach ( sort {$a->{name} cmp $b->{name}} @mods) {
 		print "Checking $_->{name}\n";
 	 	my $matchedFlag = 0;
 	 	my $dirMatch = "";
@@ -278,21 +281,25 @@ sub prepare {
 				mkdir($fullPath."/$foundMod-$_->{version}/mods/");
 			}
 		}
-		#print "$input_path$_->{file} $fullPath/$foundMod-$_->{version}/mods/$_->{file}\n";
+		print "$input_path$_->{file} $fullPath/$foundMod-$_->{version}/mods/$_->{file}\n";
 		if(-e "$fullPath/$foundMod-$_->{version}.zip" && !$force_generate) {
-			if(!$use_database || checkForExistingVersion($foundMod,$_->{version})) {
+			if($use_database || checkForExistingVersion($foundMod,$_->{version})) {
 				print "$foundMod-$_->{version} is already cached and available in solder\n";
 			} else {
-				print "Couldnt find in db\n"
+				print "Found the files but adding $_->{version} as it was missing from the database\n";
+				addVersion($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip");
 			}
 		} else {
+			print "No file no version a completely new file\n";
 			if(copy("$input_path$_->{file}","$fullPath/$foundMod-$_->{version}/mods/$_->{file}")) {
 				chdir("$fullPath/$foundMod-$_->{version}");
 				system("zip -r $foundMod-$_->{version}.zip ./*");
 				move("$foundMod-$_->{version}.zip","../");
-				if(!$use_database) {
+				if($use_database) {
 					addVersion($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip");
 				}
+			} else {
+				print "Could not copy to output folder\n";
 			}
 		}
 	}
