@@ -9,6 +9,11 @@ use DBD::mysql;
 use Digest::MD5::File qw(file_md5_hex);
 use Archive::Zip qw( :ERROR_CODES :CONSTANTS );
 use YAML::XS qw/LoadFile/;
+use Cwd;
+use File::Find::Rule;
+use JSON;
+
+use Archive::Extract;
 
 my $config = LoadFile('config.yml');
 
@@ -17,6 +22,8 @@ my $config = LoadFile('config.yml');
 my $output_path = $config->{locations}->{output} || "/var/www/api/public/mods/";
 #Dirty unparsed files from your server and or multimc instance
 my $input_path = $config->{locations}->{input} || "/var/www/api/public/input/";
+
+
 
 my $modpackVersion = 0.0.1;
 
@@ -31,6 +38,9 @@ my $host = $config->{database}->{hostname} || "localhost";
 
 my $use_database = $config->{options}->{update_database};
 my $force_generate = $config->{options}->{force_generate};
+my $just_update = $config->{options}->{just_update} || 1;
+#my $mcmodout = $config->{mcmod} || 1;
+#my $mcmodout = $config->{just_mcmod} || 1;
 
 #DATA SOURCE NAME
 my $dsn = "dbi:mysql:$database:$host:$port";
@@ -174,6 +184,7 @@ sub findClosestDBMatch {
 
 sub addModToDB {
 	my($mod) = @_;
+	return if $just_update;
 	print "Adding $mod to the database\n";
 	my $sql = "insert into mods(name,pretty_name) values(?,?)";
 	my $insertSth = $dbh->prepare($sql);
@@ -194,9 +205,10 @@ sub checkForExistingVersion {
 }
 
 sub addVersion {
-	my($mod,$version,$file) =@_;
+	my($mod,$version,$file,$original_file) =@_;
 	my $file_md5 = file_md5_hex($file);
 	if(!checkForExistingVersion($mod,$version)) {
+		return if $just_update;
 		print "Adding $mod version $version \n";
 		my $id = getModID($mod);
 		my $sql = "insert into modversions(mod_id,version,md5) values(?,?,?)";
@@ -208,17 +220,74 @@ sub addVersion {
 			return 0;
 		}
 	} else {
-		print "updating hash\n";
-		my $id = getModID($mod);
-		my $sql = "update modversions set md5=? where mod_id=? and version=?";
-		my $sth= $dbh->prepare($sql);
+		return updateMod($mod,$version,$file,$original_file);
+	}
+}
+
+sub updateMod {
+	my($mod, $version, $file,$original_file) = @_;
+	my $file_md5 = file_md5_hex($file);
+	print "updating hash\n";
+	my $id = getModID($mod);
+	print "$original_file in update mod boop\n";
+	my $data = parseMCMODData($original_file);
+	my $sth;
+	my $sql;
+	if($id) {
+		if($data) {
+			$sql = "update mods set pretty_name=?,author=?,link=?,logo_file=?,description=? where id=?";
+			$sth = $dbh->prepare($sql);
+			my $ref = $data->[0];
+			$sth->execute($ref->{'name'},join(',',@{$ref->{'authors'}}),$ref->{'url'},$ref->{'logoFile'},$ref->{'description'}."\n".$ref->{'credits'},$id);
+		} 
+		$sql = "update modversions set md5=? where mod_id=? and version=?";
+		$sth= $dbh->prepare($sql);
 		$sth->execute($file_md5,$id,$version);
+
 		if($sth) {
 			return 1;
 		} else {
 			return 0;
 		}
+	} else {
+		return 0;
 	}
+}
+
+sub parseMCMODData {
+
+	my($file) = @_;
+	print $file . "\n";
+	#7za doesn't report success properly so we will look for it next
+	#7za -y -oworking/ x /home/ahref/input/ironchest-1.6.4-5.4.1.702.zip mcmod.info
+	system("7za -y -oworking/ x $file mcmod.info");
+	my @files = File::Find::Rule->file()
+                                  ->name( "mcmod.info" )
+                                  ->maxdepth( 2 )
+                                  ->in(getcwd().'/working/');
+    my $json;
+	{
+  		local $/; #Enable 'slurp' mode
+  		open my $fh, "<", $files[0];
+  		$json = <$fh>;
+  		close $fh;
+	}
+	if(length($json)>0) {
+		my $data;
+		eval {
+			$data = decode_json($json);
+			
+		};
+		if($@) {
+			print $@;
+			return;
+		} else {
+			return $data;
+		}
+	} else {
+		return;
+	}
+	system("rm working/mcmod.info");
 }
 
 
@@ -285,18 +354,20 @@ sub prepare {
 		if(-e "$fullPath/$foundMod-$_->{version}.zip" && !$force_generate) {
 			if($use_database || checkForExistingVersion($foundMod,$_->{version})) {
 				print "$foundMod-$_->{version} is already cached and available in solder\n";
+				updateMod($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip","$input_path$_->{file}");
 			} else {
 				print "Found the files but adding $_->{version} as it was missing from the database\n";
-				addVersion($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip");
+				addVersion($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip","$input_path$_->{file}");
 			}
 		} else {
 			print "No file no version a completely new file\n";
+			return if $just_update;
 			if(copy("$input_path$_->{file}","$fullPath/$foundMod-$_->{version}/mods/$_->{file}")) {
 				chdir("$fullPath/$foundMod-$_->{version}");
 				system("zip -r $foundMod-$_->{version}.zip ./*");
 				move("$foundMod-$_->{version}.zip","../");
 				if($use_database) {
-					addVersion($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip");
+					addVersion($foundMod,$_->{version},"$fullPath/$foundMod-$_->{version}.zip","$input_path.$_->{file}");
 				}
 			} else {
 				print "Could not copy to output folder\n";
